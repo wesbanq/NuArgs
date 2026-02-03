@@ -94,7 +94,7 @@ namespace NuArgs
 		public OptionEnum[] Aliases { get; private set; }
 		public Func<string[], object?> Converter { get; private set; }
 
-		public AliasAttribute(Func<string[], object?> converter, params OptionEnum[] aliases)
+		public AliasAttribute(OptionEnum[] aliases, Func<string[], object?> converter = null)
 		{
 			Aliases = aliases;
 			Converter = converter;
@@ -167,11 +167,26 @@ namespace NuArgs
 		public void PrintHelp(CommandEnum command = default)
 		{
 			//TODO dynamically generate help text for specific options/actions using reflection
-			if (EqualityComparer<CommandEnum>.Default.Equals(command, default))
+			if (command.Equals(default))
 			{
+				Console.WriteLine($"USAGE:\n\t{GetType().Assembly.GetName().Name} <COMMAND> [OPTIONS...]");
+				Console.WriteLine("\nCOMMANDS:");
 				foreach (var commandAttribute in _commandAttributes.Values)
 				{
-					Console.WriteLine(commandAttribute.HelpText);
+					Console.WriteLine($"\t{string.Join(", ", commandAttribute.ActionName)}: {commandAttribute.HelpText}");
+				}
+				Console.WriteLine("\nOPTIONS:");
+				foreach (var optionAttribute in _optionAttributes.Values)
+				{
+					Console.WriteLine($"\t{string.Join(", ", optionAttribute.OptionNames)}: {optionAttribute.HelpText}");
+				}
+				if (_extraAttributes?.SectionHelpTexts is not null)
+				{
+					foreach (var section in _extraAttributes.SectionHelpTexts)
+					{
+						Console.WriteLine($"\n{section.Key.ToUpper()}:");
+						Console.WriteLine($"\t{section.Value.Replace("\n", "\n\t")}");
+					}
 				}
 			}
 			else
@@ -332,6 +347,7 @@ namespace NuArgs
 				return;
 			}
 
+			// get default command if there is no command given
 			var startIndex = 1;
 			var givenCommand = _commandNames.TryGetValue(args[0], out Command);
 			if (!givenCommand)
@@ -362,6 +378,7 @@ namespace NuArgs
 				}
 			}
 
+			// parse options
 			for (int i = startIndex; i < args.Length; i++)
 			{		
 				var optName = (_extraAttributes?.UnixStyle == true 
