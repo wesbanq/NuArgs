@@ -3,11 +3,6 @@ using System.Reflection;
 
 namespace NuArgs
 {
-	public class NotEnoughArgmunetsException : Exception
-	{
-		public NotEnoughArgmunetsException() : base("Not enough arguments passed")
-		{ }
-	}
 	public class ArgumentParsingException : Exception
 	{
 		public string OptionName { get; set; }
@@ -37,31 +32,25 @@ namespace NuArgs
 		public string[] OptionNames { get; private set; }
 		public OptionType Kind { get; private set; }
 		public string HelpText { get; private set; }
-		public object? DefaultValue { get; private set; }
 		
 		public OptionAttribute(
 			string name, 
-			string helpText, 
 			OptionType kind,
-			object? defaultValue = null
+			string helpText = "No help available."
 		)
 		{
 			OptionNames = [name];
 			HelpText = helpText;
 			Kind = kind;
-			DefaultValue = defaultValue;
 		}
 		public OptionAttribute(
 			string[] name, 
-			string helpText, 
 			OptionType kind,
-			object? defaultValue = null
+			string helpText = "No help available."
 		)
 		{
 			OptionNames = name;
-			HelpText = helpText;
 			Kind = kind;
-			DefaultValue = defaultValue;
 		}
 	}
 
@@ -74,7 +63,11 @@ namespace NuArgs
 		public string HelpText { get; private set; }
 
 
-		public CommandAttribute(string name, string helpText = "", OptionEnum[] required = null)
+		public CommandAttribute(
+			string name, 
+			string helpText = "No help available.", 
+			params OptionEnum[] required
+		)
 		{
 			if (name.Equals("help", StringComparison.OrdinalIgnoreCase) 
 			|| name.Equals("version", StringComparison.OrdinalIgnoreCase))
@@ -82,8 +75,7 @@ namespace NuArgs
 			
 			ActionName = name;
 			HelpText = helpText;
-			if (required is not null)
-				Required = required;
+			Required = required;
 		}
 	}
 
@@ -91,13 +83,20 @@ namespace NuArgs
 	public sealed class AliasAttribute<OptionEnum> : Attribute
 		where OptionEnum : Enum
 	{
-		public OptionEnum[] Aliases { get; private set; }
-		public Func<string[], object?> Converter { get; private set; }
+		public OptionEnum Alias { get; private set; }
+		public DataAccessor Accessor;
+		public string ConverterMethod;
+		public object? DefaultValue;
 
-		public AliasAttribute(OptionEnum[] aliases, Func<string[], object?> converter = null)
+		public AliasAttribute(
+			OptionEnum alias, 
+			string converterMethod = "",
+			object? defaultValue = null
+		)
 		{
-			Aliases = aliases;
-			Converter = converter;
+			Alias = alias;
+			ConverterMethod = converterMethod;
+			DefaultValue = defaultValue;
 		}
 	}
 
@@ -116,10 +115,19 @@ namespace NuArgs
 		}
 	}
 
-	internal sealed class DataAccessor
+	public sealed class DataAccessor
 	{
 		private readonly MemberInfo _member;
 		private Type _dataType => _member is PropertyInfo p ? p.PropertyType : ((FieldInfo)_member).FieldType;
+
+		public object? GetValue(object target)
+		{
+			if (_member is PropertyInfo p)
+				return p.GetValue(target);
+			else if (_member is FieldInfo f)
+				return f.GetValue(target);
+			return null;
+		}
 
 		public void SetValue(object target, object? value, bool convert = true)
 		{
@@ -163,14 +171,16 @@ namespace NuArgs
 		private Dictionary<CommandEnum, CommandAttribute<OptionEnum>> _commandAttributes;
 		private Dictionary<string, CommandEnum> _commandNames;
 		private Dictionary<string, OptionEnum> _optionNames;
-		
+	
 		public void PrintHelp(CommandEnum command = default)
 		{
 			//TODO dynamically generate help text for specific options/actions using reflection
 			if (EqualityComparer<CommandEnum>.Default.Equals(command, default))
 			{
-				Console.WriteLine($"USAGE:\n\t{GetType().Assembly.GetName().Name} <COMMAND> [OPTIONS...]");
+				Console.WriteLine($"USAGE:\n\t{GetType().Assembly.GetName().Name} <COMMAND> [OPTIONS...]\n");
 				Console.WriteLine("\nCOMMANDS:");
+				Console.WriteLine("\thelp: Print this help message or the help of a specific command.");
+				Console.WriteLine("\tversion: Print the version of the program.");
 				foreach (var commandAttribute in _commandAttributes.Values)
 				{
 					Console.WriteLine($"\t{string.Join(", ", commandAttribute.ActionName)}: {commandAttribute.HelpText}");
@@ -182,6 +192,7 @@ namespace NuArgs
 				}
 				if (_extraAttributes?.SectionHelpTexts is not null)
 				{
+					Console.WriteLine();
 					foreach (var section in _extraAttributes.SectionHelpTexts)
 					{
 						Console.WriteLine($"\n{section.Key.ToUpper()}:");
@@ -227,30 +238,28 @@ namespace NuArgs
 			foreach (var field in GetType().GetFields())
 			{
 				var attribute = field.GetCustomAttribute<AliasAttribute<OptionEnum>>();
-				if (attribute is not null && !_aliasAttributes.TryGetValue((OptionEnum)field.GetValue(null)!, out var _))
+				var accessor = new DataAccessor(field);
+				if (attribute is not null)
 				{
-					foreach (var alias in attribute.Aliases)
-					{
-						if (!_aliasAttributes.TryGetValue(alias, out var _))
-							_aliasAttributes.Add(alias, []);
-						_aliasAttributes[alias].Add((new DataAccessor(field), attribute));
-					}
+					attribute.Accessor = accessor;
+					if (!_aliasAttributes.TryGetValue(attribute.Alias, out var list))
+						_aliasAttributes.Add(attribute.Alias, []);
+					else
+						list.Add((accessor, attribute));
 				}
-				_aliasAttributes[(OptionEnum)field.GetValue(null)!].Add((new DataAccessor(field), attribute));
 			}
 			foreach (var prop in GetType().GetProperties())
 			{
 				var attribute = prop.GetCustomAttribute<AliasAttribute<OptionEnum>>();
-				if (attribute is not null && !_aliasAttributes.TryGetValue((OptionEnum)prop.GetValue(null)!, out var _))
+				var accessor = new DataAccessor(prop);
+				if (attribute is not null)
 				{
-					foreach (var alias in attribute.Aliases)
-					{
-						if (!_aliasAttributes.TryGetValue(alias, out var _))
-							_aliasAttributes.Add(alias, []);
-						_aliasAttributes[alias].Add((new DataAccessor(prop), attribute));
-					}
+					attribute.Accessor = accessor;
+					if (!_aliasAttributes.TryGetValue(attribute.Alias, out var list))
+						_aliasAttributes.Add(attribute.Alias, []);
+					else
+						list.Add((accessor, attribute));
 				}
-				_aliasAttributes[(OptionEnum)prop.GetValue(null)!].Add((new DataAccessor(prop), attribute));
 			}
 		}
 
@@ -261,8 +270,7 @@ namespace NuArgs
 		
 		private void GiveValueTo(OptionEnum option, string[] value)
 		{
-			var accessors = _aliasAttributes[option].Select(x => x.Item1).ToList();
-			var converters = _aliasAttributes[option].Select(x => x.Item2).ToList();
+			var pairs = _aliasAttributes[option];
 			var attr = _optionAttributes[option];
 
 			switch (attr.Kind)
@@ -271,25 +279,39 @@ namespace NuArgs
 				{
 					if (value.Length == 0)
 						throw new ArgumentParsingException("No value given to option", attr.OptionNames.First());
-					foreach (var a in accessors)
-						a.SetValue(this, converters.First().Converter(value), false);
+					foreach (var (accessor, aliasAttr) in pairs)
+					{
+						var converted = ResolveValue(option, value, aliasAttr);
+						accessor.SetValue(this, converted, converted is null || converted.GetType() == typeof(string[]));
+					}
 					break;
 				}
 				case OptionType.MultipleValues:
 				{
 					if (value.Length == 0)
 						throw new ArgumentParsingException("No value given to option", attr.OptionNames.First());
-					foreach (var a in accessors)
-						a.SetValue(this, value);
+					foreach (var (accessor, aliasAttr) in pairs)
+					{
+						var converted = ResolveValue(option, value, aliasAttr);
+						accessor.SetValue(this, converted, converted is null || converted.GetType() == typeof(string[]));
+					}
 					break;
 				}
 				case OptionType.Flag:
 				{
-					foreach (var a in accessors)
-						a.SetValue(this, true);
+					foreach (var (accessor, _) in pairs)
+						accessor.SetValue(this, true);
 					break;
 				}
 			}
+		}
+
+		private object? ResolveValue(OptionEnum option, string[] value, AliasAttribute<OptionEnum> aliasAttr)
+		{
+			var converter = aliasAttr.ConverterMethod.Equals("") ? null 
+				: GetType()
+				.GetMethod(aliasAttr.ConverterMethod, BindingFlags.Public | BindingFlags.Static, null, [typeof(string[])], null)!;
+			return converter is null ? value : converter.Invoke(this, value);
 		}
 		
 		private string[]? ParseOptionUnixStyle(string arg)
@@ -316,19 +338,18 @@ namespace NuArgs
 		{
 			foreach (var alias in _aliasAttributes)
 			{
-				foreach (var a in alias.Value.Select(x => x.Item1))
+				foreach (var (accessor, aliasAttr) in alias.Value)
 				{
-					if (!UsedOptions.Contains(alias.Key) && _optionAttributes[alias.Key].DefaultValue is not null)
-						a.SetValue(this, _optionAttributes[alias.Key].DefaultValue, false);
+					if (!UsedOptions.Contains(alias.Key) && aliasAttr.DefaultValue is not null && accessor.GetValue(this) is null)
+						accessor.SetValue(this, aliasAttr.DefaultValue, false);
 				}
 			}
 		}
 
 		public void ParseArgs(string[] args)
 		{
-			SetDefaultValues();
-
-			if (args[0].Equals("help") || args.Length == 0)
+			// predefined commands
+			if (args[0].Equals("help"))
 			{
 				if (args.Length > 1)
 				{
@@ -352,12 +373,10 @@ namespace NuArgs
 			var givenCommand = _commandNames.TryGetValue(args[0], out Command);
 			if (!givenCommand)
 			{
-				if (_extraAttributes == null)
-					throw new NotEnoughArgmunetsException();
-				var rawDefault = _extraAttributes.DefaultCommand;
-				if (rawDefault == null)
-					throw new NotEnoughArgmunetsException();
-				Command = (CommandEnum)rawDefault;
+				if (_extraAttributes is null)
+					throw new ArgumentParsingException("No command given and no default command set.");
+				Command = _extraAttributes.DefaultCommand
+					?? throw new ArgumentParsingException("No command given and no default command set.");
 			}
 
 			// parse required options
@@ -373,8 +392,6 @@ namespace NuArgs
 						startIndex = i;
 						break;
 					}
-
-
 				}
 			}
 
@@ -445,6 +462,8 @@ namespace NuArgs
 					}
 				}
 			}
+
+			SetDefaultValues();
 
 			return;
 		}

@@ -3,50 +3,74 @@
 internal enum MyOption
 {
     None = 0,
-    [Option("a", "Receive a single value.", OptionType.SingleValue)]
+    [Option("a", OptionType.SingleValue, "Receive a single value.")]
     Option1,
-    [Option("b", "Receive a multiple values.", OptionType.MultipleValues)]
+    [Option("b", OptionType.MultipleValues, "Receive multiple values.")]
     Option2,
-    [Option("c", "Receive a flag.", OptionType.Flag)]
+    [Option("c", OptionType.Flag, "Receive a flag.")]
     Option3,
 }
 
-internal enum MyAction
+internal enum MyCommand
 {
     None = 0,
     [Command<MyOption>("action1", "Print first two options.")]
-    Action1,
+    Command1,
     [Command<MyOption>("action2", "Print third option and its aliases.")]
-    Action2,
+    Command2,
 }
 
-internal class MyArgs : NuArgs<MyOption, MyAction>
+internal static class MyConverters
 {
-    [Alias<MyOption>([MyOption.Option1, MyOption.Option2])]
-    public bool? Field1;
-    [Alias<MyOption>([MyOption.Option3])]
-    public string? Field2;
-    [Alias<MyOption>([MyOption.Option3], (s) => s.ToList())]
-    public int[]? Field3;
+    public static object? Number(string[] s)
+    {
+        if (s.Length == 0) return null;
+        if (s.Length == 1) return int.TryParse(s[0], out var n) ? n : null;
+        var list = new List<int>();
+        foreach (var x in s)
+            if (int.TryParse(x, out var result)) list.Add(result);
+        return list.ToArray();
+    }
+}
+
+internal class MyArgs : NuArgs<MyOption, MyCommand>
+{
+    public MyArgs(string[] args) : base()
+    {
+        ParseArgs(args);
+    }
+    [Alias<MyOption>(MyOption.Option1)]
+    public int? Field1;
+    [Alias<MyOption>(MyOption.Option2, nameof(ConvertField2))]
+    public int[]? Field2;
+    [Alias<MyOption>(MyOption.Option3)]
+    public string? Field3;
+
+    private static int[] ConvertField2(string[] arg)
+    {
+        var list = new List<int>();
+        foreach (var x in arg)
+            if (int.TryParse(x, out var result)) list.Add(result);
+        return list.ToArray();
+    }
 }
 
 internal class Program
 {
     static int Main(string[] args)
     {
-        var myArgs = new MyArgs();
-        myArgs.ParseArgs(args);
+        var myArgs = new MyArgs(args);
 
         switch (myArgs.Command)
         {
-            case MyAction.Action1:
+            case MyCommand.Command1:
             {
                 Console.WriteLine("Action1");
                 Console.WriteLine(myArgs.Field1);
-                Console.WriteLine(myArgs.Field2);
+                Console.WriteLine(myArgs.Field3);
                 break;
             }
-            case MyAction.Action2:
+            case MyCommand.Command2:
             {
                 Console.WriteLine("Action2");
                 Console.WriteLine(myArgs.Field3?.Length);
