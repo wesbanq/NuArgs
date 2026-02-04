@@ -166,7 +166,8 @@ namespace NuArgs
 		
 		public void PrintHelp(CommandEnum command = default)
 		{
-			if (command.Equals(default))
+			//TODO dynamically generate help text for specific options/actions using reflection
+			if (EqualityComparer<CommandEnum>.Default.Equals(command, default))
 			{
 				Console.WriteLine($"USAGE:\n\t{GetType().Assembly.GetName().Name} <COMMAND> [OPTIONS...]");
 				Console.WriteLine("\nCOMMANDS:");
