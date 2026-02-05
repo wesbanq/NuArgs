@@ -1,2 +1,7 @@
 /bin
 /obj
+/.vs
+*.user
+.editorconfig
+[Pp]roperties
+/.vscode

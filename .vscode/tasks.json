@@ -8,6 +8,7 @@
             "args": [
                 "build",
                 "${workspaceFolder}/NuArgs.csproj",
+                // "-c", "Debug",
                 "/property:GenerateFullPaths=true",
                 "/consoleloggerparameters:NoSummary;ForceNoAlign"
             ],
