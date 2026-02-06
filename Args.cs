@@ -410,7 +410,9 @@ namespace NuArgs
 			_optionAttributes = InitializeDictionary<OptionEnum, OptionAttribute>();
 			_commandAttributes = InitializeDictionary<CommandEnum, CommandAttribute<OptionEnum>>();
 			_commandNames = _commandAttributes.ToDictionary(kvp => kvp.Value.ActionName, kvp => kvp.Key);
-			_optionNames = _optionAttributes.ToDictionary(kvp => kvp.Value.OptionNames.First(), kvp => kvp.Key);
+			_optionNames = _optionAttributes
+				.SelectMany(kvp => kvp.Value.OptionNames.Select(name => new { name, key = kvp.Key }))
+				.ToDictionary(x => x.name, x => x.key);
 			_aliasAttributes = new Dictionary<OptionEnum, List<(DataAccessor, OptionTargetAttribute<OptionEnum>)>>();
 
 			foreach (var field in GetType().GetFields())
@@ -571,8 +573,12 @@ namespace NuArgs
 			{
 				if (_extraAttributes is null)
 					throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven, "");
-				Command = _extraAttributes.DefaultCommand
-					?? throw new ArgumentParsingException(ArgumentParsingExceptionType.NoDefaultCommandSet, "");
+				Command = _extraAttributes.DefaultCommand;
+				if (Command is null)
+				{
+					PrintHelp();
+					throw new ArgumentParsingException(ArgumentParsingExceptionType.NoDefaultCommandSet, "");
+				}
 			}
 			else
 				++i;

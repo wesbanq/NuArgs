@@ -6,7 +6,7 @@ internal enum MyOption
     None = 0,
     [Option("a", OptionType.SingleValue, "Receive a single value.")]
     Option1,
-    [Option("b", OptionType.MultipleValues, "Receive multiple values.")]
+    [Option(["b", "values"], OptionType.MultipleValues, "Receive multiple values.")]
     Option2,
     [Option("c", OptionType.Flag, "Receive a flag.")]
     Option3,
