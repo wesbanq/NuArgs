@@ -4,7 +4,7 @@ using NuArgs;
 internal enum MyOption
 {
     None = 0,
-    [Option("a", OptionType.SingleValue, "Receive a single value.")]
+    [Option("a", OptionType.SingleValue, "Receive a single value.", 100)]
     Option1,
     [Option(["b", "values"], OptionType.MultipleValues, "Receive multiple values.")]
     Option2,

@@ -27,7 +27,7 @@ namespace NuArgs
 	public class ArgumentParsingException : Exception
 	{
 		public ArgumentParsingExceptionType Type { get; set; }
-		public string OptionName { get; set; }
+		public string OptionName { get; set; } = null!;
 		public string? GivenValue { get; set; }
 
 		private static string GetMessage(ArgumentParsingExceptionType type, string? optionName = null, string? givenValue = null)
@@ -81,9 +81,9 @@ namespace NuArgs
 	[AttributeUsage(AttributeTargets.Field, AllowMultiple = false)]
 	public sealed class OptionAttribute : Attribute, IPrintsHelp
 	{
-		public string[] OptionNames { get; private set; }
+		public string[] OptionNames { get; private set; } = null!;
 		public OptionType Kind { get; private set; }
-		public string HelpText { get; private set; }
+		public string HelpText { get; private set; } = null!;
 		public object? DefaultValue { get; private set; }
 
 		public void Print<OptionEnum>(bool printDefault, Dictionary<OptionEnum, OptionAttribute> _optionAttributes)
@@ -135,8 +135,8 @@ namespace NuArgs
 		where OptionEnum : Enum
 	{
 		public OptionEnum[]? Required { get; private set; }
-		public string ActionName { get; private set; }
-		public string HelpText { get; private set; }
+		public string ActionName { get; private set; } = null!;
+		public string HelpText { get; private set; } = null!;
 
 		public void Print<OptionEnum2>(bool printDefault, Dictionary<OptionEnum2, OptionAttribute> optionAttributes)
 			where OptionEnum2 : Enum
@@ -180,7 +180,7 @@ namespace NuArgs
 		where OptionEnum : Enum
 	{
 		public OptionEnum Alias { get; private set; }
-		public DataAccessor Accessor;
+		public DataAccessor Accessor = null!;
 		public string? Converter { get; private set; }
 
 		public OptionTargetAttribute(
@@ -204,19 +204,21 @@ namespace NuArgs
 		public string[]? SectionHeaders { get; private set; }
 		public Type? CustomOutputType { get; private set; }
 
+#pragma warning disable CS8601 // Parameter default null / null assignment to nullable properties
 		public NuArgsExtraAttribute(
-			CommandEnum defaultCommand = default, 
-			bool unixStyle = false, 
-			string[]? sectionHelpTexts = null, 
-			string[]? sectionHeaders = null, 
+			CommandEnum defaultCommand = default,
+			bool unixStyle = false,
+			string[]? sectionHelpTexts = null,
+			string[]? sectionHeaders = null,
 			string? aboutText = null,
 			bool allowNoCommand = false,
 			Type? customOutputType = null
 		)
 		{
+#pragma warning disable CS8601 // Null assignment intended for nullable properties
 			if (sectionHeaders?.Length != sectionHelpTexts?.Length)
 				throw new ArgumentException("Section headers and help texts must have the same length.");
-			
+
 			SectionHeaders = sectionHeaders;
 			SectionHelpTexts = sectionHelpTexts;
 			UnixStyle = unixStyle;
@@ -225,6 +227,7 @@ namespace NuArgs
 			CustomOutputType = customOutputType;
 			AllowNoCommand = allowNoCommand;
 		}
+#pragma warning restore CS8601
 	}
 
 	public sealed class DataAccessor
@@ -357,13 +360,13 @@ namespace NuArgs
 		public List<OptionEnum> UsedOptions { get; private set; } = [];
 
 		public NuArgsExtraAttribute<CommandEnum>? _extraAttributes;
-		private Dictionary<OptionEnum, OptionAttribute> _optionAttributes;
-		private Dictionary<OptionEnum, List<(DataAccessor, OptionTargetAttribute<OptionEnum>)>> _aliasAttributes;
-		private Dictionary<CommandEnum, CommandAttribute<OptionEnum>> _commandAttributes;
-		private Dictionary<string, CommandEnum> _commandNames;
-		private Dictionary<string, OptionEnum> _optionNames;
+		private Dictionary<OptionEnum, OptionAttribute> _optionAttributes = null!;
+		private Dictionary<OptionEnum, List<(DataAccessor, OptionTargetAttribute<OptionEnum>)>> _aliasAttributes = null!;
+		private Dictionary<CommandEnum, CommandAttribute<OptionEnum>> _commandAttributes = null!;
+		private Dictionary<string, CommandEnum> _commandNames = null!;
+		private Dictionary<string, OptionEnum> _optionNames = null!;
 
-		public void PrintHelp(CommandEnum command = default)
+		public void PrintHelp(CommandEnum command = default!)
 		{
 			if (EqualityComparer<CommandEnum>.Default.Equals(command, default))
 			{
@@ -373,7 +376,7 @@ namespace NuArgs
 					Console.WriteLine("\t" + _extraAttributes.AboutText);
 					Console.WriteLine();
 				}
-				Console.WriteLine($"USAGE:\n\t{GetType().Assembly.GetName().Name} <COMMAND> [OPTIONS...]");
+				Console.WriteLine($"USAGE:\n\t{GetType().Assembly.GetName()!.Name ?? ""} <COMMAND> [OPTIONS...]");
 				Console.WriteLine("\nCOMMANDS:");
 				Console.WriteLine("\thelp : Print this help message or the help of a specific command.");
 				Console.WriteLine("\tversion : Print the version of the program.");
@@ -395,7 +398,7 @@ namespace NuArgs
 				{
 					for (int i = 0; i < _extraAttributes.SectionHelpTexts.Length; i++)
 					{
-						Console.WriteLine($"\n{_extraAttributes.SectionHeaders[i].ToUpper()}:");
+						Console.WriteLine($"\n{_extraAttributes.SectionHeaders![i].ToUpper()}:");
 						Console.WriteLine($"\t{_extraAttributes.SectionHelpTexts[i].Replace("\n", "\n\t")}");
 					}
 				}
@@ -427,10 +430,10 @@ namespace NuArgs
 				var sym = fields[i].GetCustomAttributes(false);
 				foreach (var s in sym)
 				{
-					var newKey = (E)fields[i].GetValue(null);
-					if (newKey is null) 
+					var rawKey = fields[i].GetValue(null);
+					if (rawKey is null)
 						throw new InvalidOperationException($"Failed to get value for option {fields[i].Name}");
-					dict.Add(newKey, (A)s!);
+					dict.Add((E)rawKey, (A)s!);
 				}
 			}
 			return dict;
@@ -477,7 +480,7 @@ namespace NuArgs
 
 		public OptionEnum? WhichOption(string arg)
 		{
-			return _optionNames.GetValueOrDefault(arg, default(OptionEnum));
+			return _optionNames.TryGetValue(arg, out var opt) ? opt : default(OptionEnum?);
 		}
 		
 		private void GiveValueTo(OptionEnum option, string[] value)
@@ -660,11 +663,14 @@ namespace NuArgs
 
 				var current = WhichOption(finalName);
 				if (current is null || current.Equals(default(OptionEnum)))
-					throw new ArgumentParsingException(ArgumentParsingExceptionType.UnknownOption, finalName);	
+					throw new ArgumentParsingException(ArgumentParsingExceptionType.UnknownOption, finalName);
 
 				var currentAttribute = _optionAttributes[current];
-				var next = i+1 < args.Length ? WhichOption(args[i+1]) : default;
-				_optionAttributes.TryGetValue(next, out var nextAttribute);
+				var next = i+1 < args.Length ? WhichOption(args[i+1]) : default(OptionEnum?);
+#pragma warning disable CS8600, CS8604 // next coalesced to default(OptionEnum) before use
+				OptionEnum nextKey = next ?? default(OptionEnum);
+				_optionAttributes.TryGetValue(nextKey, out var nextAttribute);
+#pragma warning restore CS8600, CS8604
 
 				if (UsedOptions.Contains(current))
 					throw new ArgumentParsingException(ArgumentParsingExceptionType.DuplicateOption, currentAttribute.OptionNames.First());
@@ -678,8 +684,12 @@ namespace NuArgs
 						for (; i < args.Length; ++i)
 						{
 							var a = ParseOption(args[i]);
-							if (a is not null && a.Length > 0 && !WhichOption(a[0]).Equals(default(OptionEnum)))
-								break;
+							if (a is not null && a.Length > 0)
+							{
+								var opt = WhichOption(a[0]);
+								if (opt is not null && !opt.Equals(default(OptionEnum)))
+									break;
+							}
 							++v;
 						}
 						if (v == 0)
@@ -704,9 +714,9 @@ namespace NuArgs
 			}
 
 			// set positional arguments
-			if (_commandAttributes.TryGetValue(Command, out var comAttr) && comAttr.Required is not null)
+			if (Command is not null && _commandAttributes.TryGetValue(Command, out var comAttr) && comAttr.Required is not null)
 			{
-				var requiredOptions = comAttr.Required;
+				OptionEnum[] requiredOptions = comAttr.Required!;
 				foreach (var option in requiredOptions)
 				{
 					if (UsedOptions.Contains(option))
