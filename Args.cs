@@ -79,12 +79,30 @@ namespace NuArgs
 	}
 
 	[AttributeUsage(AttributeTargets.Field, AllowMultiple = false)]
-	public sealed class OptionAttribute : Attribute
+	public sealed class OptionAttribute : Attribute, IPrintsHelp
 	{
 		public string[] OptionNames { get; private set; }
 		public OptionType Kind { get; private set; }
 		public string HelpText { get; private set; }
 		public object? DefaultValue { get; private set; }
+
+		public void Print<OptionEnum>(bool printDefault, Dictionary<OptionEnum, OptionAttribute> _optionAttributes)
+			where OptionEnum : Enum
+		{
+			var valType = Kind switch
+			{
+				OptionType.SingleValue => "(single value)",
+				OptionType.MultipleValues => "(multiple values)",
+				OptionType.Flag => "(flag)",
+				_ => throw new UnreachableException(),
+			};
+			Console.WriteLine($"\t{string.Join(", ", OptionNames.Select(o => GetFullName(o)))} : {valType} {HelpText}{(DefaultValue is not null ? $" (default: {DefaultValue})" : "")}");
+		}
+
+		public static string GetFullName(string name)
+		{
+			return name.Length > 1 ? $"--{name}" : $"-{name}";
+		}
 
 		public OptionAttribute(
 			string name, 
@@ -106,19 +124,25 @@ namespace NuArgs
 		)
 		{
 			OptionNames = name;
+			HelpText = helpText;
 			Kind = kind;
 			DefaultValue = defaultValue;
 		}
 	}
 
 	[AttributeUsage(AttributeTargets.Field, AllowMultiple = false)]
-	public sealed class CommandAttribute<OptionEnum> : Attribute
+	public sealed class CommandAttribute<OptionEnum> : Attribute, IPrintsHelp
 		where OptionEnum : Enum
 	{
 		public OptionEnum[]? Required { get; private set; }
 		public string ActionName { get; private set; }
 		public string HelpText { get; private set; }
 
+		public void Print<OptionEnum2>(bool printDefault, Dictionary<OptionEnum2, OptionAttribute> optionAttributes)
+			where OptionEnum2 : Enum
+		{
+			Console.WriteLine($"\t{ActionName}{(printDefault ? " (default)" : "")} : {HelpText} {(Required is not null ? $"(required: {string.Join(", ", Required.Select(o => OptionAttribute.GetFullName(optionAttributes[(OptionEnum2)(object)o].OptionNames.First())))})" : "")}");
+		}
 
 		public CommandAttribute(
 			string name, 
@@ -292,9 +316,10 @@ namespace NuArgs
 	public enum OptionType : byte
 	{ None = 0, Flag = 1, SingleValue = 2, MultipleValues = 3 }
 
-	public interface IArgConverter
+	public interface IPrintsHelp
 	{
-		object? Convert(string[] args);
+		void Print<OptionEnum>(bool printDefault, Dictionary<OptionEnum, OptionAttribute> optionAttributes)
+			where OptionEnum : Enum;
 	}
 
 	public static class BuiltInConverters
@@ -353,15 +378,18 @@ namespace NuArgs
 				Console.WriteLine("\thelp : Print this help message or the help of a specific command.");
 				Console.WriteLine("\tversion : Print the version of the program.");
 
-				var defaultCommand = _commandAttributes[_extraAttributes.DefaultCommand];
+				CommandAttribute<OptionEnum>? defaultCommand = null;
+				if (_extraAttributes is not null && _extraAttributes.DefaultCommand is not null)
+					_commandAttributes.TryGetValue(_extraAttributes.DefaultCommand, out defaultCommand);
+
 				foreach (var commandAttribute in _commandAttributes.Values)
 				{
-					Console.WriteLine($"\t{string.Join(", ", commandAttribute.ActionName)} : {(ReferenceEquals(defaultCommand, commandAttribute) ? "(default)" : "")} {commandAttribute.HelpText}");
+					commandAttribute.Print(ReferenceEquals(defaultCommand, commandAttribute), _optionAttributes);
 				}
 				Console.WriteLine("\nOPTIONS:");
 				foreach (var optionAttribute in _optionAttributes.Values)
 				{
-					Console.WriteLine($"\t{string.Join(", ", optionAttribute.OptionNames)} : {optionAttribute.HelpText} {(optionAttribute.DefaultValue is not null ? $"(default: {optionAttribute.DefaultValue})" : "")}");
+					optionAttribute.Print(false, _optionAttributes);
 				}
 				if (_extraAttributes?.SectionHelpTexts is not null)
 				{
@@ -376,7 +404,16 @@ namespace NuArgs
 			{
 				var commandAttribute = _commandAttributes[command];
 				Console.WriteLine($"{commandAttribute.ActionName}: {commandAttribute.HelpText}");
+				Console.WriteLine($"\nREQUIRED OPTIONS:");
+				if (commandAttribute.Required is not null)
+				{
+					foreach (var opt in commandAttribute.Required)
+					{
+						_optionAttributes[opt].Print(false, _optionAttributes);
+					}
+				}
 			}
+			Console.WriteLine();
 		}
 
 		private static Dictionary<E, A> InitializeDictionary<E, A>()
