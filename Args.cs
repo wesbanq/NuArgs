@@ -355,16 +355,18 @@ namespace NuArgs
 				}
 				Console.WriteLine($"USAGE:\n\t{GetType().Assembly.GetName().Name} <COMMAND> [OPTIONS...]");
 				Console.WriteLine("\nCOMMANDS:");
-				Console.WriteLine("\thelp: Print this help message or the help of a specific command.");
-				Console.WriteLine("\tversion: Print the version of the program.");
+				Console.WriteLine("\thelp : Print this help message or the help of a specific command.");
+				Console.WriteLine("\tversion : Print the version of the program.");
+
+				var defaultCommand = _commandAttributes[_extraAttributes.DefaultCommand];
 				foreach (var commandAttribute in _commandAttributes.Values)
 				{
-					Console.WriteLine($"\t{string.Join(", ", commandAttribute.ActionName)}: {commandAttribute.HelpText}");
+					Console.WriteLine($"\t{string.Join(", ", commandAttribute.ActionName)} : {(ReferenceEquals(defaultCommand, commandAttribute) ? "(default)" : "")} {commandAttribute.HelpText}");
 				}
 				Console.WriteLine("\nOPTIONS:");
 				foreach (var optionAttribute in _optionAttributes.Values)
 				{
-					Console.WriteLine($"\t{string.Join(", ", optionAttribute.OptionNames)}: {optionAttribute.HelpText}");
+					Console.WriteLine($"\t{string.Join(", ", optionAttribute.OptionNames)} : {optionAttribute.HelpText} {(optionAttribute.DefaultValue is not null ? $"(default: {optionAttribute.DefaultValue})" : "")}");
 				}
 				if (_extraAttributes?.SectionHelpTexts is not null)
 				{
@@ -508,8 +510,8 @@ namespace NuArgs
 			if (arg[0].Equals('-'))
 			{
 				if (arg[1].Equals('-'))
-					return [arg[2..]];
-				return arg[1..].Split();
+					return [arg.TrimStart('-')];
+				return arg.TrimStart('-').Select(s => s.ToString()).ToArray();
 			}
 			return null;
 		}
@@ -518,7 +520,7 @@ namespace NuArgs
 		{
 			if (arg[0].Equals('-'))
 			{
-				return [arg[1..]];
+				return [arg.TrimStart('-')];
 			}
 			return null;
 		}
@@ -563,7 +565,8 @@ namespace NuArgs
 			}
 
 			// get default command if there is no command given
-			var givenCommand = _commandNames.TryGetValue(args[0], out Command);
+			int i = 0;
+			var givenCommand = _commandNames.TryGetValue(args[i], out Command);
 			if (!givenCommand)
 			{
 				if (_extraAttributes is null)
@@ -571,10 +574,12 @@ namespace NuArgs
 				Command = _extraAttributes.DefaultCommand
 					?? throw new ArgumentParsingException(ArgumentParsingExceptionType.NoDefaultCommandSet, "");
 			}
+			else
+				++i;
 
 			// parse options
 			List<string> positionalArguments = [];
-			for (int i = 1; i < args.Length; i++)
+			for (; i < args.Length; i++)
 			{		
 				var optName = (_extraAttributes?.UnixStyle == true 
 					? ParseOptionUnixStyle(args[i])
@@ -624,14 +629,18 @@ namespace NuArgs
 				{
 					case OptionType.MultipleValues:
 					{
-						++i;
+						var start = ++i;
 						var v = 0;
 						for (; i < args.Length; ++i)
 						{
-							if (!WhichOption(args[i]).Equals(default(OptionEnum))) break;
+							var a = ParseOption(args[i]);
+							if (a is not null && a.Length > 0 && !WhichOption(a[0]).Equals(default(OptionEnum)))
+								break;
 							++v;
 						}
-						GiveValueTo(current, args.AsSpan(i, v).ToArray());
+						if (v == 0)
+							throw new ArgumentParsingException(ArgumentParsingExceptionType.NoValueGivenToOption, finalName);
+						GiveValueTo(current, args.AsSpan(start, v).ToArray());
 						--i; // for loop will increment i again
 						continue;
 					}
@@ -679,11 +688,10 @@ namespace NuArgs
 				throw new ArgumentParsingException(ArgumentParsingExceptionType.TooManyPositionalArguments);
 
 			SetDefaultValues();
-
 			return;
 		}
 
-		public void ParseArgsOrExit(string[] args, int exitCodeOnError = 1)
+		public void ParseArgsOrExit(string[] args, int exitCode = 1)
 		{
 			try 
 			{
@@ -692,7 +700,7 @@ namespace NuArgs
 			catch (ArgumentParsingException e)
 			{
 				Console.Error.WriteLine(e.Message);
-				Environment.Exit(exitCodeOnError);
+				Environment.Exit(exitCode);
 			}
 		}
 

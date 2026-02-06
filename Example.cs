@@ -1,5 +1,6 @@
 using NuArgs;
 
+// MUST include a None = 0 option.
 internal enum MyOption
 {
     None = 0,
@@ -13,16 +14,18 @@ internal enum MyOption
     Option4,
 }
 
+// MUST include a None = 0 option.
 internal enum MyCommand
 {
     None = 0,
     [Command<MyOption>("command1", "Print first two options.", MyOption.Option1)]
     Command1,
-    [Command<MyOption>("command2", "Print third option and its aliases.")]
+    [Command<MyOption>("command2", "Print third option and its aliases.", MyOption.Option2)]
     Command2,
 }
 
 [NuArgsExtra<MyCommand>(
+	defaultCommand: MyCommand.Command1,
     aboutText: "This is a test program.", 
     sectionHelpTexts: ["This is a test section.", "This is another test section."], 
     sectionHeaders: ["Section 1", "Section 2"])]
