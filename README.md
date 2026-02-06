@@ -2,6 +2,18 @@
 
 A lightweight, attribute-based command-line argument parser for C#. Define options and commands with enums and attributes; NuArgs uses reflection to parse `string[]` args and populate your types.
 
+## Installation
+
+```bash
+dotnet add package NuArgs
+```
+
+Or from **Package Manager Console** in Visual Studio:
+
+```powershell
+Install-Package NuArgs
+```
+
 ## Requirements
 
 - .NET 10+
@@ -19,14 +31,14 @@ A lightweight, attribute-based command-line argument parser for C#. Define optio
 
 ## Option types
 
-| Kind            | Description |
-|-----------------|-------------|
-| `None`          | Sentinel; must be the first member (e.g. `None = 0`) in both option and command enums. |
-| `Flag`          | Boolean; no value (e.g. `-c` or `--verbose`). |
-| `SingleValue`   | Exactly one value (e.g. `-a 42` or `--file path`). |
-| `MultipleValues`| One or more values; when used in a command’s `Required` list, it must be last. |
+| Kind             | Description |
+|------------------|-------------|
+| `None`           | Sentinel; must be the first member (e.g. `None = 0`) in both option and command enums. |
+| `Flag`           | Boolean; no value (e.g. `-c` or `--verbose`). |
+| `SingleValue`    | Exactly one value (e.g. `-a 42` or `--file path`). |
+| `MultipleValues` | One or more values; when used in a command’s `Required` list, it must be last. |
 
-Option names in attributes are given **without** leading dashes; the parser accepts `-name` and `--name`.
+Option names in attributes are given **without** leading dashes; the parser accepts `-name` and `--name` (single-character options as `-x`, longer as `--name`).
 
 ## Attributes
 
@@ -34,10 +46,12 @@ Option names in attributes are given **without** leading dashes; the parser acce
 
 Defines an option. Use on **enum fields** of your option enum.
 
-- **OptionNames** — One or more names (e.g. `"a"`, `"file"`). Users pass `-a`, `--file`, etc.
+- **OptionNames** — One name (`string`) or multiple (`string[]`). Users pass `-a`, `--file`, etc.
 - **Kind** — `OptionType`: `Flag`, `SingleValue`, or `MultipleValues`.
-- **HelpText** — Shown in generated help.
+- **HelpText** — Shown in generated help (default: `"No help available."`).
 - **DefaultValue** — Optional; applied when the option is not supplied. To show in help, set it on the attribute; setting it on the field/property alone does not show in help.
+
+Constructors: `OptionAttribute(string name, OptionType kind, string helpText = ..., object? defaultValue = null)` and `OptionAttribute(string[] name, OptionType kind, string helpText = ..., object? defaultValue = null)`.
 
 ### `[Command<OptionEnum>]`
 
@@ -45,7 +59,7 @@ Defines a command (first positional argument). Use on **enum fields** of your co
 
 - **ActionName** — Command name (e.g. `"run"`, `"build"`). `"help"` and `"version"` are reserved and will throw `ArgumentParsingException(ReservedCommandName)` if used as a command name.
 - **HelpText** — Shown in help.
-- **Required** — Optional list of options that must be provided for this command; filled from positional arguments in order. Any `MultipleValues` option must be last in `Required`.
+- **Required** — Optional `params OptionEnum[]` of options that must be provided for this command; filled from positional arguments in order. Any `MultipleValues` option must be last in `Required`.
 
 ### `[OptionTarget<OptionEnum>]`
 
@@ -60,21 +74,23 @@ Optional. Applied to your **parser class** to configure global behavior and help
 
 - **DefaultCommand** — Command used when the user does not pass a command name.
 - **UnixStyle** — If `true`, short options can be grouped (e.g. `-abc` → `-a` `-b` `-c`).
-- **aboutText** — Printed at the top of help.
-- **sectionHeaders** / **sectionHelpTexts** — Parallel arrays for extra help sections; lengths must match.
-- **allowNoCommand** — When `true`, allows no command to be given (see implementation for behavior when combined with default command).
-- **customOutputType** — Reserved for future use.
+- **SectionHelpTexts** / **SectionHeaders** — Parallel arrays for extra help sections; lengths must match.
+- **AboutText** — Printed at the top of help.
+- **AllowNoCommand** — When `true`, allows invocation with no command and no default (e.g. for help-only or custom handling).
+- **CustomOutputType** — Reserved for future use.
+
+Constructor parameter order: `defaultCommand`, `unixStyle`, `sectionHelpTexts`, `sectionHeaders`, `aboutText`, `allowNoCommand`, `customOutputType`. All except the first have defaults.
 
 ## Built-in converters
 
 Use the **method name** in `OptionTarget(..., nameof(BuiltInConverters.X))` or the string `"X"`:
 
-| Name | Description |
-|------|-------------|
-| `Auto` | Pass-through; conversion is done from `string[]` by the target member type. |
-| `File` | Single path → full path. |
-| `Files` | Multiple paths → full paths. |
-| `FileVerifyPath` | Single path → full path; throws if file does not exist. |
+| Name               | Description |
+|--------------------|-------------|
+| `Auto`             | Pass-through; conversion is done from `string[]` by the target member type. |
+| `File`             | Single path → full path. |
+| `Files`            | Multiple paths → full paths. |
+| `FileVerifyPath`   | Single path → full path; throws if file does not exist. |
 | `FilesVerifyPaths` | Multiple paths → full paths; throws if any file does not exist. |
 | `Int32Array`, `Int64Array`, `DoubleArray`, `StringArray` | Parse each value to the corresponding type. |
 | `FirstInt32`, `FirstInt64`, `FirstDouble`, `FirstString`, `FirstBool` | First value only; nullable; empty → `null`. |
@@ -83,20 +99,15 @@ Custom converters: add a method on your parser class with signature `object? You
 
 ## Exceptions
 
-Parsing throws **`ArgumentParsingException`** (no other parsing exceptions). It exposes:
+Parsing throws **`ArgumentParsingException`**. It exposes:
 
-- **Type** — `ArgumentParsingExceptionType` (e.g. `UnknownOption`, `NoValueGivenToOption`, `DuplicateOption`, `FileDoesNotExist`, `UnknownConverter`, `TooManyPositionalArguments`, `NoCommandGiven`, `NoDefaultCommandSet`, `ReservedCommandName`, `MultipleValuesOptionNotAtEnd`, `CustomMessage`, etc.).
+- **Type** — `ArgumentParsingExceptionType`.
 - **OptionName** — The option or command name involved, when applicable.
 - **GivenValue** — The invalid value, when applicable.
 
-**Constructors:**
+**Exception types:** `NonExistentOption`, `InvalidOptionValue`, `DuplicateOption`, `NoCommandGiven`, `NoDefaultCommandSet`, `NoValueGivenToOption`, `FileDoesNotExist`, `UnknownConverter`, `UnknownOption`, `UnknownCommand`, `UnknownOptionValue`, `UnknownCommandValue`, `TooManyPositionalArguments`, `ReservedCommandName`, `MultipleValuesOptionNotAtEnd`, `CustomMessage`.
 
-- `ArgumentParsingException(string message)` — Custom message; `Type` is `CustomMessage`.
-- `ArgumentParsingException(ArgumentParsingExceptionType type)` — For types that need no name/value.
-- `ArgumentParsingException(ArgumentParsingExceptionType type, string optionName)` — For types that use an option/command name.
-- `ArgumentParsingException(ArgumentParsingExceptionType type, string optionName, string givenValue)` — For types that use both (e.g. `InvalidOptionValue`).
-
-Use **`ParseArgsOrExit(args, exitCode)`** to print the exception message to stderr and exit instead of throwing.
+Use **`ParseArgsOrExit(args, exitCode)`** to write the exception message to stderr and exit instead of throwing.
 
 ## Usage outline
 

@@ -667,10 +667,9 @@ namespace NuArgs
 
 				var currentAttribute = _optionAttributes[current];
 				var next = i+1 < args.Length ? WhichOption(args[i+1]) : default(OptionEnum?);
-#pragma warning disable CS8600, CS8604 // next coalesced to default(OptionEnum) before use
-				OptionEnum nextKey = next ?? default(OptionEnum);
-				_optionAttributes.TryGetValue(nextKey, out var nextAttribute);
-#pragma warning restore CS8600, CS8604
+				if (next is null || next.Equals(default(OptionEnum)))
+					throw new ArgumentParsingException(ArgumentParsingExceptionType.UnknownOption, args[i+1]);
+				_optionAttributes.TryGetValue(next, out var nextAttribute);
 
 				if (UsedOptions.Contains(current))
 					throw new ArgumentParsingException(ArgumentParsingExceptionType.DuplicateOption, currentAttribute.OptionNames.First());
