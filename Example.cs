@@ -25,7 +25,8 @@ internal enum MyCommand
 }
 
 [NuArgsExtra<MyCommand>(
-	defaultCommand: MyCommand.Command1,
+	allowNoCommand: true,
+	//defaultCommand: MyCommand.Command1,
     aboutText: "This is a test program.", 
     sectionHelpTexts: ["This is a test section.", "This is another test section."], 
     sectionHeaders: ["Section 1", "Section 2"])]
@@ -87,6 +88,11 @@ internal class Program
                 Console.WriteLine("Flag -c: {0}", myArgs.Field3);
                 break;
             }
+			case MyCommand.None:
+			{
+				Console.WriteLine("No command.");
+				break;
+			}
         }
         
         return 0;

@@ -83,23 +83,6 @@ Use the **method name** in `OptionTarget(..., nameof(BuiltInConverters.X))` or t
 
 Custom converters: add a method on your parser class with signature `object? YourMethod(string[] args)` (static or instance) and pass its name as the converter. For `SingleValue` options the array has length 1.
 
-## Exceptions
-
-**`ArgumentParsingException`** — Thrown for parsing errors. Properties:
-
-- **Type** — `ArgumentParsingExceptionType` (e.g. `UnknownOption`, `NoValueGivenToOption`, `TooManyPositionalArguments`).
-- **OptionName** — Option or command name involved, when applicable.
-- **GivenValue** — Value that was invalid, when applicable.
-
-Constructors:
-
-- `ArgumentParsingException(string message)` — Custom message; `Type` is `CustomMessage`.
-- `ArgumentParsingException(ArgumentParsingExceptionType type)`
-- `ArgumentParsingException(ArgumentParsingExceptionType type, string optionName)`
-- `ArgumentParsingException(ArgumentParsingExceptionType type, string optionName, string givenValue)`
-
-There is no separate “not enough arguments” exception; those cases use specific types such as `NoValueGivenToOption` or `TooManyPositionalArguments`.
-
 ## Usage outline
 
 1. **Define two enums** — One for options, one for commands. Each must have a first member `None = 0` (used internally and skipped in option/command lists).
@@ -117,3 +100,27 @@ Example: see `Example.cs` in the repository.
 - Both enums: first member must be `None = 0`.
 - Parser class must inherit `Args<OptionEnum, CommandEnum>` and apply attributes as above.
 - Default command and unix-style parsing are configured on the **class** via `[NuArgsExtra]`, not on the constructor.
+
+## Minimal example
+
+```cs
+    using NuArgs;
+
+    public enum MyCommands { None = 0 }
+    public enum MyOptions { None = 0, [Option("o", "Help text for this option.")] Option }
+    
+    public class MyArgs : NuArgs<MyCommands, MyOptions>
+    {
+        [OptionTarget<MyOptions>(MyOptions.Option)]
+        public int Value;
+    }
+
+    internal class Program 
+    {
+        internal static void Main(string[] args)
+        {
+            var myArgs = new MyArgs();
+            myArgs.ParseArgsOrExit(args);
+        }
+    }
+```

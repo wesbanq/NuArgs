@@ -6,7 +6,7 @@ namespace NuArgs
 {
 	public enum ArgumentParsingExceptionType : byte
 	{
-		NonExistantOption,
+		NonExistentOption,
 		InvalidOptionValue,
 		DuplicateOption,
 		NoCommandGiven,
@@ -34,7 +34,7 @@ namespace NuArgs
 		{
 			return type switch
 			{
-				ArgumentParsingExceptionType.NonExistantOption => $"No value given to option '{optionName}'.",
+				ArgumentParsingExceptionType.NonExistentOption => $"No value given to option '{optionName}'.",
 				ArgumentParsingExceptionType.InvalidOptionValue => $"Invalid value given to option '{optionName}': '{givenValue}'.",
 				ArgumentParsingExceptionType.DuplicateOption => $"Option '{optionName}' used twice.",
 				ArgumentParsingExceptionType.NoCommandGiven => "No command given.",
@@ -49,7 +49,7 @@ namespace NuArgs
 				ArgumentParsingExceptionType.TooManyPositionalArguments => "Too many positional arguments.",
 				ArgumentParsingExceptionType.ReservedCommandName => $"Reserved command name: '{optionName}'.",
 				ArgumentParsingExceptionType.MultipleValuesOptionNotAtEnd => $"Multiple values option '{optionName}' is not at the end of the required options.",
-				ArgumentParsingExceptionType.CustomMessage => throw new UnreachableException("Custom message should not be used in this context."),
+				_ => throw new UnreachableException(),
 			};
 		}
 
@@ -174,6 +174,7 @@ namespace NuArgs
 	{
 		public CommandEnum? DefaultCommand { get; private set; }
 		public bool UnixStyle { get; private set; }
+		public bool AllowNoCommand { get; private set; }
 		public string? AboutText { get; private set; }
 		public string[]? SectionHelpTexts { get; private set; }
 		public string[]? SectionHeaders { get; private set; }
@@ -185,6 +186,7 @@ namespace NuArgs
 			string[]? sectionHelpTexts = null, 
 			string[]? sectionHeaders = null, 
 			string? aboutText = null,
+			bool allowNoCommand = false,
 			Type? customOutputType = null
 		)
 		{
@@ -197,6 +199,7 @@ namespace NuArgs
 			DefaultCommand = defaultCommand;
 			AboutText = aboutText;
 			CustomOutputType = customOutputType;
+			AllowNoCommand = allowNoCommand;
 		}
 	}
 
@@ -238,7 +241,6 @@ namespace NuArgs
 			if (targetType == typeof(string[]))
 				return values;
 
-			// Single value: use first element
 			if (!targetType.IsArray && (targetType.IsValueType || targetType == typeof(string)))
 			{
 				var elementType = Nullable.GetUnderlyingType(targetType) ?? targetType;
@@ -247,7 +249,6 @@ namespace NuArgs
 				return Convert.ChangeType(values[0], elementType);
 			}
 
-			// Array of T
 			if (targetType.IsArray)
 			{
 				var elementType = targetType.GetElementType()!;
@@ -257,7 +258,6 @@ namespace NuArgs
 				return array;
 			}
 
-			// List<T> / IList<T> / ICollection<T> etc.
 			if (targetType.IsGenericType)
 			{
 				var gen = targetType.GetGenericTypeDefinition();
@@ -270,12 +270,10 @@ namespace NuArgs
 						list.Add(Convert.ChangeType(s, elementType));
 					if (gen == typeof(List<>))
 						return list;
-					// IList<>/ICollection<>/IEnumerable<>: List<T> is assignable
 					return list;
 				}
 			}
 
-			// Fallback: single value from first element (e.g. nullable ref types)
 			if (values.Length > 0)
 				return Convert.ChangeType(values[0], targetType);
 			return null;
@@ -299,10 +297,8 @@ namespace NuArgs
 		object? Convert(string[] args);
 	}
 
-	/// <summary>Built-in converters for option values. Use these names in OptionTargetAttribute(alias, converter: nameof(BuiltInConverters.Int32Array)) or the string "Int32Array", etc.</summary>
 	public static class BuiltInConverters
 	{
-		/// <summary>Return as-is; conversion is done by field type in DataAccessor.</summary>
 		public static string[] Auto(string[] args) => args;
 
 		public static string File(string[] args) => Path.GetFullPath(args[0]);
@@ -344,7 +340,6 @@ namespace NuArgs
 
 		public void PrintHelp(CommandEnum command = default)
 		{
-			//TODO dynamically generate help text for specific options/actions using reflection
 			if (EqualityComparer<CommandEnum>.Default.Equals(command, default))
 			{
 				if (_extraAttributes?.AboutText is not null)
@@ -494,12 +489,11 @@ namespace NuArgs
 			if (string.IsNullOrEmpty(name))
 				return value;
 
-			// Explicit built-in converter
+			// explicit built-in converter
 			var builtIn = typeof(BuiltInConverters).GetMethod(name, BindingFlags.Public | BindingFlags.Static, null, [typeof(string[])], null);
 			if (builtIn is not null)
 				return builtIn.Invoke(null, [value]);
 
-			// Custom method on the derived class: object? Method(string[] args) or T Method(string[] args)
 			var custom = GetType().GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance, null, [typeof(string[])], null);
 			if (custom is not null)
 				return custom.Invoke(custom.IsStatic ? null : this, [value]);
@@ -547,8 +541,13 @@ namespace NuArgs
 		{
 			if (args.Length == 0)
 			{
-				PrintHelp();
-				return;
+				if (_extraAttributes?.AllowNoCommand == true)
+					return;
+				else
+				{
+					PrintHelp();
+					throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven);
+				}
 			}
 
 			// predefined commands
@@ -562,9 +561,10 @@ namespace NuArgs
 			}
 			if (args[0].Equals("version"))
 			{
-				Console.WriteLine($"{GetType().Assembly.GetName().Name}: {GetType().Assembly.GetName().Version}v");
+				Console.WriteLine($"{GetType().Assembly.GetName().Name}: {GetType().Assembly.GetName().Version}");
 				return;
 			}
+
 
 			// get default command if there is no command given
 			int i = 0;
@@ -572,18 +572,19 @@ namespace NuArgs
 			if (!givenCommand)
 			{
 				if (_extraAttributes is null)
-					throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven, "");
+					throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven);
 				Command = _extraAttributes.DefaultCommand;
-				if (Command is null)
+				if (Command is null && !_extraAttributes.AllowNoCommand)
 				{
 					PrintHelp();
-					throw new ArgumentParsingException(ArgumentParsingExceptionType.NoDefaultCommandSet, "");
+					throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven);
 				}
 			}
 			else
 				++i;
 
 			// parse options
+			// start loop on what is supposed to be an option
 			List<string> positionalArguments = [];
 			for (; i < args.Length; i++)
 			{		
@@ -622,7 +623,7 @@ namespace NuArgs
 
 				var current = WhichOption(finalName);
 				if (current is null || current.Equals(default(OptionEnum)))
-					throw new ArgumentParsingException(ArgumentParsingExceptionType.UnknownCommand, finalName);	
+					throw new ArgumentParsingException(ArgumentParsingExceptionType.UnknownOption, finalName);	
 
 				var currentAttribute = _optionAttributes[current];
 				var next = i+1 < args.Length ? WhichOption(args[i+1]) : default;
@@ -666,9 +667,9 @@ namespace NuArgs
 			}
 
 			// set positional arguments
-			var requiredOptions = _commandAttributes[Command].Required;
-			if (requiredOptions is not null)
+			if (_commandAttributes.TryGetValue(Command, out var comAttr) && comAttr.Required is not null)
 			{
+				var requiredOptions = comAttr.Required;
 				foreach (var option in requiredOptions)
 				{
 					if (UsedOptions.Contains(option))
