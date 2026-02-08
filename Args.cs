@@ -530,11 +530,25 @@ namespace NuArgs
 				return value;
 
 			// explicit built-in converter
-			var builtIn = typeof(BuiltInConverters).GetMethod(name, BindingFlags.Public | BindingFlags.Static, null, [typeof(string[])], null);
+			var builtIn = typeof(BuiltInConverters)
+				.GetMethod(
+					name, 
+					BindingFlags.Public | BindingFlags.Static, 
+					null, 
+					[typeof(string[])], 
+					null
+				);
 			if (builtIn is not null)
 				return builtIn.Invoke(null, [value]);
 
-			var custom = GetType().GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance, null, [typeof(string[])], null);
+			var custom = GetType()
+				.GetMethod(
+					name, 
+					BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance, 
+					null, 
+					[typeof(string[])], 
+					null
+				);
 			if (custom is not null)
 				return custom.Invoke(custom.IsStatic ? null : this, [value]);
 

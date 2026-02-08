@@ -1,7 +1,8 @@
-/bin
-/obj
-/nupkgs
-/.vs
+bin/
+obj/
+nupkgs/
+.vs/
 *.user
 .editorconfig
-/.vscode
+[Pp]roperties
+.vscode/

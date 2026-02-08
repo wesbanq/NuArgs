@@ -2,22 +2,54 @@
 
 A lightweight, attribute-based command-line argument parser for C#. Define options and commands with enums and attributes; NuArgs uses reflection to parse `string[]` args and populate your types.
 
-## Installation
+## Building and installation
 
-```bash
-dotnet add package NuArgs
-```
+NuArgs is not published to NuGet. To use it, build from source and reference it from your project.
 
-Or from **Package Manager Console** in Visual Studio:
-
-```powershell
-Install-Package NuArgs
-```
-
-## Requirements
+### Requirements
 
 - .NET 10+
 - C# 12
+
+### Build from source
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/wesbanq/NuArgs.git
+   cd NuArgs
+   ```
+
+2. Restore and build:
+   ```bash
+   dotnet restore
+   dotnet build -c Release
+   ```
+   The built assembly is in `bin/Release/net10.0/NuArgs.dll`. A `.nupkg` is also produced in `bin/Release/` when `GeneratePackageOnBuild` is enabled.
+
+### Use in your project
+
+**Option A — Project reference (recommended)**  
+In your application’s `.csproj`, add a reference to the NuArgs project:
+```xml
+<ItemGroup>
+  <ProjectReference Include="path/to/NuArgs/NuArgs.csproj" />
+</ItemGroup>
+```
+Use the path to your clone (e.g. `../NuArgs/NuArgs.csproj` if NuArgs is a sibling folder).
+
+**Option B — Local NuGet package**  
+1. From the NuArgs repo directory, create the package:
+   ```bash
+   dotnet pack -c Release -o ./nupkgs
+   ```
+2. Add the folder as a NuGet source (one-time):
+   ```bash
+   dotnet nuget add source /absolute/path/to/NuArgs/nupkgs --name NuArgsLocal
+   ```
+3. In your application directory, add the package:
+   ```bash
+   dotnet add package NuArgs --source NuArgsLocal
+   ```
 
 ## Features
 
@@ -83,11 +115,11 @@ Constructor parameter order: `defaultCommand`, `unixStyle`, `sectionHelpTexts`, 
 
 ## Built-in converters
 
-Use the **method name** in `OptionTarget(..., nameof(BuiltInConverters.X))` or the string `"X"`:
+Use the **method name** in `OptionTarget(..., nameof(BuiltInConverters.X))`.
 
 | Name               | Description |
 |--------------------|-------------|
-| `Auto`             | Pass-through; conversion is done from `string[]` by the target member type. |
+| `Auto (default)`             | Pass-through; conversion is done from `string[]` by the target member type. |
 | `File`             | Single path → full path. |
 | `Files`            | Multiple paths → full paths. |
 | `FileVerifyPath`   | Single path → full path; throws if file does not exist. |
@@ -111,51 +143,81 @@ Use **`ParseArgsOrExit(args, exitCode)`** to write the exception message to stde
 
 ## Usage outline
 
-1. **Define two enums** — One for options, one for commands. Each must have a first member `None = 0` (used internally and skipped in option/command lists).
-2. **Option enum** — Decorate each option with `[Option(nameOrNames, OptionType.XXX, helpText, defaultValue)]`.
-3. **Command enum** — Decorate each command with `[Command<OptionEnum>("name", helpText, requiredOption1, ...)]`.
-4. **Parser class** — Create a class that inherits `Args<OptionEnum, CommandEnum>`. Add `[NuArgsExtra<CommandEnum>(...)]` if you want a default command, unix-style options, or extra help sections.
-5. **Bind options** — On fields and properties, use `[OptionTarget<OptionEnum>(MyOption.SomeOption)]` or with a converter: `[OptionTarget<OptionEnum>(MyOption.SomeOption, nameof(BuiltInConverters.Int32Array))]` (or a custom method name).
-6. **Parse** — Instantiate your parser and call `ParseArgs(args)` or `ParseArgsOrExit(args, exitCode)`.
-7. **Use result** — Read the `Command` property and your option-backed fields/properties after parsing. Empty args trigger `PrintHelp()` and return without setting a command.
-
-See **`Example.cs`** in the repository for a full example.
-
-## Minimal example
-
+1. Create two enums, one for the options the program has, and one for the commands the program has. 
+**Make sure to add a None = 0 value for both enums.**
 ```csharp
-using NuArgs;
-
-internal enum MyOption
+public enum MyOptions
 {
     None = 0,
-    [Option("n", OptionType.SingleValue, "A number.")]
-    Number,
+    Option1,
+    Option2,
 }
-
-internal enum MyCommand
+public enum MyCommands
 {
     None = 0,
-    [Command<MyOption>("run", "Run with a number.")]
-    Run,
+    Command1,
+    Command2,
 }
-
-[NuArgsExtra<MyCommand>(defaultCommand: MyCommand.Run, aboutText: "Minimal NuArgs demo.")]
-internal class MyArgs : Args<MyOption, MyCommand>
+```
+2. Create a parser class that inherits `Args<OptionEnum, CommandEnum>` and declare fields or properties for each option you want to bind (types can be `string`, `int?`, `string[]`, etc.).
+```csharp
+public class MyArgs : Args<MyOptions, MyCommands>
 {
-    [OptionTarget<MyOption>(MyOption.Number)]
-    public int? Number { get; set; }
+    // OptionTarget attributes added in step 4
+    public string? Option1Value;
+    public string[]? Option2Values;
+}
+```
+
+3. Annotate the **option enum** with `[Option(...)]` and the **command enum** with `[Command<OptionEnum>(...)]`.
+```csharp
+public enum MyOptions
+{
+    None = 0,
+    [Option("a", OptionType.SingleValue, "First option.")]
+    Option1,
+    [Option(["b", "other-option"], OptionType.MultipleValues, "Second option.")]
+    Option2,
 }
 
-// In Main(string[] args):
+public enum MyCommands
+{
+    None = 0,
+    [Command<MyOptions>("cmd1", "First command.")]
+    Command1,
+    [Command<MyOptions>("cmd2", "Second command.")]
+    Command2,
+}
+```
+
+4. On the parser class, add `[OptionTarget<OptionEnum>(OptionEnum.Value)]` to each field or property that should receive an option. Optionally add `[NuArgsExtra<CommandEnum>(...)]` on the class for a default command, about text, or unix-style options.
+```csharp
+[NuArgsExtra<MyCommands>(defaultCommand: MyCommands.Command1, aboutText: "My app.")]
+public class MyArgs : Args<MyOptions, MyCommands>
+{
+    [OptionTarget<MyOptions>(MyOptions.Option1)]
+    public string? Option1Value { get; set; }
+
+    [OptionTarget<MyOptions>(MyOptions.Option2)]
+    public string[]? Option2Values { get; set; }
+}
+```
+
+5. In your entry point, instantiate the parser, call `ParseArgs(args)` (or `ParseArgsOrExit(args)` to print errors and exit), then read `Command` and your option properties.
+```csharp
 var myArgs = new MyArgs();
-myArgs.ParseArgsOrExit(args);
-// Usage: myapp run -n 42   or   myapp -n 42   (default command)
-// Then: myArgs.Command == MyCommand.Run, myArgs.Number == 42
+myArgs.ParseArgsOrExit(args);  // or ParseArgs(args) and catch ArgumentParsingException
+
+if (myArgs.Command == MyCommands.Command1)
+    Console.WriteLine(myArgs.Option1Value);
 ```
 
 ## Summary
 
-- Both enums: first member must be `None = 0`.
+- First member of both enums must be `None = 0`.
 - Parser class must inherit `Args<OptionEnum, CommandEnum>` and apply attributes as above.
 - Default command and unix-style parsing are configured on the **class** via `[NuArgsExtra<CommandEnum>]`, not on the constructor.
+
+## TODO
+
+- Quoted strings
