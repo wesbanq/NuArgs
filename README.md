@@ -14,40 +14,43 @@ NuArgs is not published to NuGet. To use it, build from source and reference it 
 ### Build from source
 
 1. Clone the repository:
-   ```bash
-   git clone https://github.com/wesbanq/NuArgs.git
+   ```powershell
+   git clone https://github.com/wesbanq/NuArgs
    cd NuArgs
    ```
 
 2. Restore and build:
-   ```bash
+   ```powershell
    dotnet restore
    dotnet build -c Release
    ```
-   The built assembly is in `bin/Release/net10.0/NuArgs.dll`. A `.nupkg` is also produced in `bin/Release/` when `GeneratePackageOnBuild` is enabled.
 
 ### Use in your project
 
-**Option A — Project reference (recommended)**  
+#### **Option A — Project reference (recommended)**  
 In your application’s `.csproj`, add a reference to the NuArgs project:
 ```xml
 <ItemGroup>
   <ProjectReference Include="path/to/NuArgs/NuArgs.csproj" />
 </ItemGroup>
 ```
-Use the path to your clone (e.g. `../NuArgs/NuArgs.csproj` if NuArgs is a sibling folder).
 
-**Option B — Local NuGet package**  
+#### **Option B — Local NuGet package**  
 1. From the NuArgs repo directory, create the package:
-   ```bash
-   dotnet pack -c Release -o ./nupkgs
+   ```powershell
+   dotnet pack -c Release -o .\nupkgs
    ```
-2. Add the folder as a NuGet source (one-time):
-   ```bash
-   dotnet nuget add source /absolute/path/to/NuArgs/nupkgs --name NuArgsLocal
+   Confirm the folder contains `NuArgs.1.0.0.nupkg` (e.g. `dir nupkgs` on Windows, `ls nupkgs` on macOS/Linux).
+
+2. From your **application** directory, add the package by pointing at the nupkgs folder. Use the **full path** to the `nupkgs` folder (relative paths often cause “no versions available”):
+   ```powershell
+   dotnet add package NuArgs --source "C:\path\to\NuArgs\nupkgs"
    ```
-3. In your application directory, add the package:
-   ```bash
+   On Windows use a path like `C:\Users\You\repo\NuArgs\nupkgs`. On macOS/Linux use e.g. `/home/you/repo/NuArgs/nupkgs`.
+
+   **Alternatively**, register the folder as a NuGet source once (again use the full path), then add the package by source name:
+   ```powershell
+   dotnet nuget add source "C:\path\to\NuArgs\nupkgs" --name NuArgsLocal
    dotnet add package NuArgs --source NuArgsLocal
    ```
 
@@ -71,75 +74,6 @@ Use the path to your clone (e.g. `../NuArgs/NuArgs.csproj` if NuArgs is a siblin
 | `MultipleValues` | One or more values; when used in a command’s `Required` list, it must be last. |
 
 Option names in attributes are given **without** leading dashes; the parser accepts `-name` and `--name` (single-character options as `-x`, longer as `--name`).
-
-## Attributes
-
-### `[Option]`
-
-Defines an option. Use on **enum fields** of your option enum.
-
-- **OptionNames** — One name (`string`) or multiple (`string[]`). Users pass `-a`, `--file`, etc.
-- **Kind** — `OptionType`: `Flag`, `SingleValue`, or `MultipleValues`.
-- **HelpText** — Shown in generated help (default: `"No help available."`).
-- **DefaultValue** — Optional; applied when the option is not supplied. To show in help, set it on the attribute; setting it on the field/property alone does not show in help.
-
-Constructors: `OptionAttribute(string name, OptionType kind, string helpText = ..., object? defaultValue = null)` and `OptionAttribute(string[] name, OptionType kind, string helpText = ..., object? defaultValue = null)`.
-
-### `[Command<OptionEnum>]`
-
-Defines a command (first positional argument). Use on **enum fields** of your command enum.
-
-- **ActionName** — Command name (e.g. `"run"`, `"build"`). `"help"` and `"version"` are reserved and will throw `ArgumentParsingException(ReservedCommandName)` if used as a command name.
-- **HelpText** — Shown in help.
-- **Required** — Optional `params OptionEnum[]` of options that must be provided for this command; filled from positional arguments in order. Any `MultipleValues` option must be last in `Required`.
-
-### `[OptionTarget<OptionEnum>]`
-
-Maps an option to a field or property on your `Args` subclass. Use on **fields and properties** of the parser class.
-
-- **Alias** — The option enum value this member receives.
-- **Converter** — Optional. Either a method name from `BuiltInConverters` (e.g. `nameof(BuiltInConverters.Int32Array)`) or the name of a static/instance method on your class with signature `object? Method(string[] args)`. Omit for automatic conversion based on the member type (e.g. `string[]` → `int?`, `int[]`, `List<int>`, etc.). For `SingleValue` options the converter still receives a `string[]` of length 1.
-
-### `[NuArgsExtra<CommandEnum>]`
-
-Optional. Applied to your **parser class** to configure global behavior and help.
-
-- **DefaultCommand** — Command used when the user does not pass a command name.
-- **UnixStyle** — If `true`, short options can be grouped (e.g. `-abc` → `-a` `-b` `-c`).
-- **SectionHelpTexts** / **SectionHeaders** — Parallel arrays for extra help sections; lengths must match.
-- **AboutText** — Printed at the top of help.
-- **AllowNoCommand** — When `true`, allows invocation with no command and no default (e.g. for help-only or custom handling).
-- **CustomOutputType** — Reserved for future use.
-
-Constructor parameter order: `defaultCommand`, `unixStyle`, `sectionHelpTexts`, `sectionHeaders`, `aboutText`, `allowNoCommand`, `customOutputType`. All except the first have defaults.
-
-## Built-in converters
-
-Use the **method name** in `OptionTarget(..., nameof(BuiltInConverters.X))`.
-
-| Name               | Description |
-|--------------------|-------------|
-| `Auto (default)`             | Pass-through; conversion is done from `string[]` by the target member type. |
-| `File`             | Single path → full path. |
-| `Files`            | Multiple paths → full paths. |
-| `FileVerifyPath`   | Single path → full path; throws if file does not exist. |
-| `FilesVerifyPaths` | Multiple paths → full paths; throws if any file does not exist. |
-| `Int32Array`, `Int64Array`, `DoubleArray`, `StringArray` | Parse each value to the corresponding type. |
-| `FirstInt32`, `FirstInt64`, `FirstDouble`, `FirstString`, `FirstBool` | First value only; nullable; empty → `null`. |
-
-Custom converters: add a method on your parser class with signature `object? YourMethod(string[] args)` (static or instance) and pass its name as the converter.
-
-## Exceptions
-
-Parsing throws **`ArgumentParsingException`**. It exposes:
-
-- **Type** — `ArgumentParsingExceptionType`.
-- **OptionName** — The option or command name involved, when applicable.
-- **GivenValue** — The invalid value, when applicable.
-
-**Exception types:** `NonExistentOption`, `InvalidOptionValue`, `DuplicateOption`, `NoCommandGiven`, `NoDefaultCommandSet`, `NoValueGivenToOption`, `FileDoesNotExist`, `UnknownConverter`, `UnknownOption`, `UnknownCommand`, `UnknownOptionValue`, `UnknownCommandValue`, `TooManyPositionalArguments`, `ReservedCommandName`, `MultipleValuesOptionNotAtEnd`, `CustomMessage`.
-
-Use **`ParseArgsOrExit(args, exitCode)`** to write the exception message to stderr and exit instead of throwing.
 
 ## Usage outline
 
@@ -212,12 +146,57 @@ if (myArgs.Command == MyCommands.Command1)
     Console.WriteLine(myArgs.Option1Value);
 ```
 
-## Summary
+## Attributes
 
-- First member of both enums must be `None = 0`.
-- Parser class must inherit `Args<OptionEnum, CommandEnum>` and apply attributes as above.
-- Default command and unix-style parsing are configured on the **class** via `[NuArgsExtra<CommandEnum>]`, not on the constructor.
+### `[Option]`
 
-## TODO
+Defines an option. Use on **enum fields** of your option enum.
 
-- Quoted strings
+- **OptionNames** — One name (`string`) or multiple (`string[]`). Users pass `-a`, `--file`, etc.
+- **Kind** — `OptionType`: `Flag`, `SingleValue`, or `MultipleValues`.
+- **HelpText** — Shown in generated help (default: `"No help available."`).
+- **DefaultValue** — Optional; applied when the option is not supplied. To show in help, set it on the attribute; setting it on the field/property alone does not show in help.
+
+Constructors: `OptionAttribute(string name, OptionType kind, string helpText = ..., object? defaultValue = null)` and `OptionAttribute(string[] name, OptionType kind, string helpText = ..., object? defaultValue = null)`.
+
+### `[Command<OptionEnum>]`
+
+Defines a command (first positional argument). Use on **enum fields** of your command enum.
+
+- **ActionName** — Command name (e.g. `"run"`, `"build"`). `"help"` and `"version"` are reserved and will throw `ArgumentParsingException(ReservedCommandName)` if used as a command name.
+- **HelpText** — Shown in help.
+- **Required** — Optional `params OptionEnum[]` of options that must be provided for this command; filled from positional arguments in order. Any `MultipleValues` option must be last in `Required`.
+
+### `[OptionTarget<OptionEnum>]`
+
+Maps an option to a field or property on your `Args` subclass. Use on **fields and properties** of the parser class.
+
+- **Alias** — The option enum value this member receives.
+- **Converter** — Optional. Either a method name from `BuiltInConverters` (e.g. `nameof(BuiltInConverters.Int32Array)`) or the name of a static/instance method on your class with signature `object? Method(string[] args)`. Omit for automatic conversion based on the member type (e.g. `string[]` → `int?`, `int[]`, `List<int>`, etc.). For `SingleValue` options the converter still receives a `string[]` of length 1.
+
+### `[NuArgsExtra<CommandEnum>]`
+
+Optional. Applied to your **parser class** to configure global behavior and help.
+
+- **DefaultCommand** — Command used when the user does not pass a command name.
+- **UnixStyle** — If `true`, short options can be grouped (e.g. `-abc` → `-a` `-b` `-c`).
+- **SectionHelpTexts** / **SectionHeaders** — Parallel arrays for extra help sections; lengths must match.
+- **AboutText** — Printed at the top of help.
+- **AllowNoCommand** — When `true`, allows invocation with no command and no default (e.g. for help-only or custom handling).
+- **CustomOutputType** — Reserved for future use.
+
+## Built-in converters
+
+Use the **method name** in `OptionTarget(..., nameof(BuiltInConverters.X))`.
+
+| Name               | Description |
+|--------------------|-------------|
+| `Auto (default)`             | Pass-through; conversion is done from `string[]` by the target member type. |
+| `File`             | Single path → full path. |
+| `Files`            | Multiple paths → full paths. |
+| `FileVerifyPath`   | Single path → full path; throws if file does not exist. |
+| `FilesVerifyPaths` | Multiple paths → full paths; throws if any file does not exist. |
+| `Int32Array`, `Int64Array`, `DoubleArray`, `StringArray` | Parse each value to the corresponding type. |
+| `FirstInt32`, `FirstInt64`, `FirstDouble`, `FirstString`, `FirstBool` | First value only; nullable; empty → `null`. |
+
+Custom converters: add a method on your parser class with signature `object? YourMethod(string[] args)` (static or instance) and pass its name as the converter.

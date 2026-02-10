@@ -1,3 +1,4 @@
+using Microsoft.VisualBasic;
 using System.Collections;
 using System.Diagnostics;
 using System.Reflection;
@@ -141,7 +142,7 @@ namespace NuArgs
 		public void Print<OptionEnum2>(bool printDefault, Dictionary<OptionEnum2, OptionAttribute> optionAttributes)
 			where OptionEnum2 : Enum
 		{
-			Console.WriteLine($"\t{ActionName}{(printDefault ? " (default)" : "")} : {HelpText} {(Required is not null ? $"(required: {string.Join(", ", Required.Select(o => OptionAttribute.GetFullName(optionAttributes[(OptionEnum2)(object)o].OptionNames.First())))})" : "")}");
+			Console.WriteLine($"\t{ActionName}{(printDefault ? " (default)" : "")} : {HelpText} {(Required is not null && Required.Length > 0 ? $"(required: {string.Join(", ", Required.Select(o => OptionAttribute.GetFullName(optionAttributes[(OptionEnum2)(object)o].OptionNames.First())))})" : "")}");
 		}
 
 		public CommandAttribute(
@@ -591,56 +592,49 @@ namespace NuArgs
 			}
 		}
 
-		public void ParseArgs(string[] args)
+		public void ParseArgs(string[] rawArgs)
 		{
-			if (args.Length == 0)
-			{
-				if (_extraAttributes?.AllowNoCommand == true)
-					return;
-				else
-				{
-					PrintHelp();
-					throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven);
-				}
-			}
-
-			// predefined commands
-			if (args[0].Equals("help"))
-			{
-				if (args.Length > 1 && _commandNames.TryGetValue(args[1], out var nextCommand))
-					PrintHelp(nextCommand);
-				else
-					PrintHelp();
-				return;
-			}
-			if (args[0].Equals("version"))
-			{
-				Console.WriteLine($"{GetType().Assembly.GetName().Name}: {GetType().Assembly.GetName().Version}");
-				return;
-			}
-
-
-			// get default command if there is no command given
 			int i = 0;
-			var givenCommand = _commandNames.TryGetValue(args[i], out Command);
-			if (!givenCommand)
+			bool givenCommand;
+			if (rawArgs.Length > 0)
 			{
-				if (_extraAttributes is null)
-					throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven);
-				Command = _extraAttributes.DefaultCommand;
-				if (Command is null && !_extraAttributes.AllowNoCommand)
+				// predefined commands
+				if (rawArgs[0].Equals("help"))
 				{
-					PrintHelp();
-					throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven);
+					if (rawArgs.Length > 1 && _commandNames.TryGetValue(rawArgs[1], out var nextCommand))
+						PrintHelp(nextCommand);
+					else
+						PrintHelp();
+					Environment.Exit(0);
 				}
-			}
-			else
-				++i;
+				if (rawArgs[0].Equals("version"))
+				{
+					Console.WriteLine($"{GetType().Assembly.GetName().Name}: {GetType().Assembly.GetName().Version}");
+					Environment.Exit(0);
+				}
 
+				// get default command if there is no command given
+				givenCommand = _commandNames.TryGetValue(rawArgs[i], out Command);
+				if (!givenCommand)
+				{
+					if (_extraAttributes is null)
+						throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven);
+					Command = _extraAttributes.DefaultCommand;
+					if (Command is null)
+					{
+						PrintHelp();
+						throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven);
+					}
+				}
+				else
+					++i;
+			}
+			
+			var args = rawArgs.ToList();
 			// parse options
 			// start loop on what is supposed to be an option
 			List<string> positionalArguments = [];
-			for (; i < args.Length; i++)
+			for (; i < args.Count; i++)
 			{		
 				var optName = (_extraAttributes?.UnixStyle == true 
 					? ParseOptionUnixStyle(args[i])
@@ -680,10 +674,10 @@ namespace NuArgs
 					throw new ArgumentParsingException(ArgumentParsingExceptionType.UnknownOption, finalName);
 
 				var currentAttribute = _optionAttributes[current];
-				var next = i+1 < args.Length ? WhichOption(args[i+1]) : default(OptionEnum?);
-				if (next is null || next.Equals(default(OptionEnum)))
-					throw new ArgumentParsingException(ArgumentParsingExceptionType.UnknownOption, args[i+1]);
-				_optionAttributes.TryGetValue(next, out var nextAttribute);
+				var next = i+1 < args.Count ? WhichOption(args[i+1]) : default(OptionEnum?);
+				OptionAttribute? nextAttribute = null;
+				if (next is not null)
+					_optionAttributes.TryGetValue(next, out nextAttribute);
 
 				if (UsedOptions.Contains(current))
 					throw new ArgumentParsingException(ArgumentParsingExceptionType.DuplicateOption, currentAttribute.OptionNames.First());
@@ -694,7 +688,7 @@ namespace NuArgs
 					{
 						var start = ++i;
 						var v = 0;
-						for (; i < args.Length; ++i)
+						for (; i < args.Count; ++i)
 						{
 							var a = ParseOption(args[i]);
 							if (a is not null && a.Length > 0)
@@ -707,7 +701,7 @@ namespace NuArgs
 						}
 						if (v == 0)
 							throw new ArgumentParsingException(ArgumentParsingExceptionType.NoValueGivenToOption, finalName);
-						GiveValueTo(current, args.AsSpan(start, v).ToArray());
+						GiveValueTo(current, args.Slice(start, v).ToArray());
 						--i; // for loop will increment i again
 						continue;
 					}
