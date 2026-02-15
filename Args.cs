@@ -22,7 +22,8 @@ namespace NuArgs
 		TooManyPositionalArguments,
 		ReservedCommandName,
 		MultipleValuesOptionNotAtEnd,
-		CustomMessage,
+		InvalidOptionName,
+		OptionTargetNotFound,
 	}
 	
 	public class ArgumentParsingException : Exception
@@ -48,17 +49,14 @@ namespace NuArgs
 				ArgumentParsingExceptionType.UnknownOptionValue => $"Unknown option value: '{optionName}'.",
 				ArgumentParsingExceptionType.UnknownCommandValue => $"Unknown command value: '{optionName}'.",
 				ArgumentParsingExceptionType.TooManyPositionalArguments => "Too many positional arguments.",
+				ArgumentParsingExceptionType.InvalidOptionName => $"Invalid option name: '{optionName}'.",
 				ArgumentParsingExceptionType.ReservedCommandName => $"Reserved command name: '{optionName}'.",
+				ArgumentParsingExceptionType.OptionTargetNotFound => $"Target for option '{optionName}' not found.",
 				ArgumentParsingExceptionType.MultipleValuesOptionNotAtEnd => $"Multiple values option '{optionName}' is not at the end of the required options.",
 				_ => throw new UnreachableException(),
 			};
 		}
 
-		public ArgumentParsingException(string message)
-			: base(message)
-		{ 
-			Type = ArgumentParsingExceptionType.CustomMessage;
-		}
 		public ArgumentParsingException(ArgumentParsingExceptionType type)
 			: base(GetMessage(type))
 		{ 
@@ -86,8 +84,9 @@ namespace NuArgs
 		public OptionType Kind { get; private set; }
 		public string HelpText { get; private set; } = null!;
 		public object? DefaultValue { get; private set; }
+		public bool NoTarget { get; private set; }
 
-		public void Print<OptionEnum>(bool printDefault, Dictionary<OptionEnum, OptionAttribute> _optionAttributes)
+		public void Print<OptionEnum>(bool printDefault, Dictionary<OptionEnum, OptionAttribute> _optionAttributes, bool useLong = false)
 			where OptionEnum : Enum
 		{
 			var valType = Kind switch
@@ -97,37 +96,45 @@ namespace NuArgs
 				OptionType.Flag => "(flag)",
 				_ => throw new UnreachableException(),
 			};
-			Console.WriteLine($"\t{string.Join(", ", OptionNames.Select(o => GetFullName(o)))} : {valType} {HelpText}{(DefaultValue is not null ? $" (default: {DefaultValue})" : "")}");
+			Console.WriteLine($"\t{string.Join(", ", OptionNames.Select(o => GetFullName(o, useLong)))} : {valType} {HelpText}{(DefaultValue is not null ? $" (default: {DefaultValue})" : "")}");
 		}
 
-		public static string GetFullName(string name)
-		{
-			return name.Length > 1 ? $"--{name}" : $"-{name}";
-		}
+		public static string GetFullName(string name, bool useLong = false)
+			=> name.Length > 1 && useLong ? $"--{name}" : $"-{name}";
 
 		public OptionAttribute(
 			string name, 
 			OptionType kind,
 			string helpText = "No help available.",
-			object? defaultValue = null
+			object? defaultValue = null,
+			bool noTarget = false
 		)
 		{
+			if (name.StartsWith('-'))
+				throw new ArgumentParsingException(ArgumentParsingExceptionType.InvalidOptionName, name);
+
 			OptionNames = [name];
 			HelpText = helpText;
 			Kind = kind;
 			DefaultValue = defaultValue;
+			NoTarget = noTarget;
 		}
 		public OptionAttribute(
 			string[] name, 
 			OptionType kind,
 			string helpText = "No help available.",
-			object? defaultValue = null
+			object? defaultValue = null,
+			bool noTarget = false
 		)
 		{
+			if (name.Any(n => n.StartsWith('-'))) 
+				throw new ArgumentParsingException(ArgumentParsingExceptionType.InvalidOptionName, name.First(n => n.StartsWith('-')));
+
 			OptionNames = name;
 			HelpText = helpText;
 			Kind = kind;
 			DefaultValue = defaultValue;
+			NoTarget = noTarget;
 		}
 	}
 
@@ -139,10 +146,10 @@ namespace NuArgs
 		public string ActionName { get; private set; } = null!;
 		public string HelpText { get; private set; } = null!;
 
-		public void Print<OptionEnum2>(bool printDefault, Dictionary<OptionEnum2, OptionAttribute> optionAttributes)
+		public void Print<OptionEnum2>(bool printDefault, Dictionary<OptionEnum2, OptionAttribute> optionAttributes, bool useLong = false)
 			where OptionEnum2 : Enum
 		{
-			Console.WriteLine($"\t{ActionName}{(printDefault ? " (default)" : "")} : {HelpText} {(Required is not null && Required.Length > 0 ? $"(required: {string.Join(", ", Required.Select(o => OptionAttribute.GetFullName(optionAttributes[(OptionEnum2)(object)o].OptionNames.First())))})" : "")}");
+			Console.WriteLine($"\t{ActionName}{(printDefault ? " (default)" : "")} : {HelpText} {(Required is not null && Required.Length > 0 ? $"(required: {string.Join(", ", Required.Select(o => OptionAttribute.GetFullName(optionAttributes[(OptionEnum2)(object)o].OptionNames.First(), useLong)))})" : "")}");
 		}
 
 		public CommandAttribute(
@@ -205,9 +212,8 @@ namespace NuArgs
 		public string[]? SectionHeaders { get; private set; }
 		public Type? CustomOutputType { get; private set; }
 
-#pragma warning disable CS8601 // Parameter default null / null assignment to nullable properties
 		public NuArgsExtraAttribute(
-			CommandEnum defaultCommand = default,
+			CommandEnum defaultCommand = default!,
 			bool unixStyle = false,
 			string[]? sectionHelpTexts = null,
 			string[]? sectionHeaders = null,
@@ -216,7 +222,6 @@ namespace NuArgs
 			Type? customOutputType = null
 		)
 		{
-#pragma warning disable CS8601 // Null assignment intended for nullable properties
 			if (sectionHeaders?.Length != sectionHelpTexts?.Length)
 				throw new ArgumentException("Section headers and help texts must have the same length.");
 
@@ -228,7 +233,6 @@ namespace NuArgs
 			CustomOutputType = customOutputType;
 			AllowNoCommand = allowNoCommand;
 		}
-#pragma warning restore CS8601
 	}
 
 	public sealed class DataAccessor
@@ -320,9 +324,9 @@ namespace NuArgs
 	public enum OptionType : byte
 	{ None = 0, Flag = 1, SingleValue = 2, MultipleValues = 3 }
 
-	public interface IPrintsHelp
+	internal interface IPrintsHelp
 	{
-		void Print<OptionEnum>(bool printDefault, Dictionary<OptionEnum, OptionAttribute> optionAttributes)
+		void Print<OptionEnum>(bool printDefault, Dictionary<OptionEnum, OptionAttribute> optionAttributes, bool useLong = false)
 			where OptionEnum : Enum;
 	}
 
@@ -388,12 +392,12 @@ namespace NuArgs
 
 				foreach (var commandAttribute in _commandAttributes.Values)
 				{
-					commandAttribute.Print(ReferenceEquals(defaultCommand, commandAttribute), _optionAttributes);
+					commandAttribute.Print(ReferenceEquals(defaultCommand, commandAttribute), _optionAttributes, _extraAttributes?.UnixStyle ?? false);
 				}
 				Console.WriteLine("\nOPTIONS:");
 				foreach (var optionAttribute in _optionAttributes.Values)
 				{
-					optionAttribute.Print(false, _optionAttributes);
+					optionAttribute.Print(false, _optionAttributes, _extraAttributes?.UnixStyle ?? false);
 				}
 				if (_extraAttributes?.SectionHelpTexts is not null)
 				{
@@ -413,7 +417,7 @@ namespace NuArgs
 				{
 					foreach (var opt in commandAttribute.Required)
 					{
-						_optionAttributes[opt].Print(false, _optionAttributes);
+						_optionAttributes[opt].Print(false, _optionAttributes, _extraAttributes?.UnixStyle ?? false);
 					}
 				}
 			}
@@ -475,6 +479,18 @@ namespace NuArgs
 						_aliasAttributes.Add(attribute.Alias, [(accessor, attribute)]);
 					else
 						list.Add((accessor, attribute));
+				}
+			}
+
+			// check if all options have a target
+			foreach (var (opt, attr) in _optionAttributes)
+			{
+				if (attr.NoTarget)
+					continue;
+
+				if (!_aliasAttributes.TryGetValue(opt, out var list))
+				{
+					throw new ArgumentParsingException(ArgumentParsingExceptionType.OptionTargetNotFound, opt.ToString());
 				}
 			}
 		}
@@ -617,13 +633,12 @@ namespace NuArgs
 				givenCommand = _commandNames.TryGetValue(rawArgs[i], out Command);
 				if (!givenCommand)
 				{
-					if (_extraAttributes is null)
-						throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven);
-					Command = _extraAttributes.DefaultCommand;
-					if (Command is null)
+					if (_extraAttributes is not null && _extraAttributes.DefaultCommand is not null)
+						Command = _extraAttributes.DefaultCommand;
+					else
 					{
 						PrintHelp();
-						throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven);
+						throw new ArgumentParsingException(ArgumentParsingExceptionType.UnknownCommand, rawArgs[0]);
 					}
 				}
 				else
