@@ -200,3 +200,8 @@ Use the **method name** in `OptionTarget(..., nameof(BuiltInConverters.X))`.
 | `FirstInt32`, `FirstInt64`, `FirstDouble`, `FirstString`, `FirstBool` | First value only; nullable; empty → `null`. |
 
 Custom converters: add a method on your parser class with signature `object? YourMethod(string[] args)` (static or instance) and pass its name as the converter.
+
+## TODO
+
+- Change "No value given to option" text to use the parameter name.
+- When no value given to required option of implied command, print help.
