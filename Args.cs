@@ -1,4 +1,3 @@
-using Microsoft.VisualBasic;
 using System.Collections;
 using System.Diagnostics;
 using System.Reflection;
@@ -201,6 +200,7 @@ namespace NuArgs
 		}
 	}
 
+	[AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
 	public sealed class NuArgsExtraAttribute<CommandEnum> : Attribute
 		where CommandEnum : Enum
 	{
@@ -211,6 +211,7 @@ namespace NuArgs
 		public string[]? SectionHelpTexts { get; private set; }
 		public string[]? SectionHeaders { get; private set; }
 		public Type? CustomOutputType { get; private set; }
+		public string? CustomVersion { get; private set; }
 
 		public NuArgsExtraAttribute(
 			CommandEnum defaultCommand = default!,
@@ -219,7 +220,8 @@ namespace NuArgs
 			string[]? sectionHeaders = null,
 			string? aboutText = null,
 			bool allowNoCommand = false,
-			Type? customOutputType = null
+			Type? customOutputType = null,
+			string? customVersion = null
 		)
 		{
 			if (sectionHeaders?.Length != sectionHelpTexts?.Length)
@@ -232,6 +234,7 @@ namespace NuArgs
 			AboutText = aboutText;
 			CustomOutputType = customOutputType;
 			AllowNoCommand = allowNoCommand;
+			CustomVersion = customVersion;
 		}
 	}
 
@@ -625,7 +628,13 @@ namespace NuArgs
 				}
 				if (rawArgs[0].Equals("version"))
 				{
-					Console.WriteLine($"{GetType().Assembly.GetName().Name}: {GetType().Assembly.GetName().Version}");
+					if (_extraAttributes is not null && _extraAttributes.CustomVersion is not null)
+						Console.WriteLine($"{GetType().Assembly.GetName().Name}: {_extraAttributes.CustomVersion}");
+					else
+						Console.WriteLine($"{GetType().Assembly.GetName().Name}: {
+							GetType().Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+							.InformationalVersion.ToString() ?? "unknown"}");
+					
 					Environment.Exit(0);
 				}
 
@@ -633,7 +642,7 @@ namespace NuArgs
 				givenCommand = _commandNames.TryGetValue(rawArgs[i], out Command);
 				if (!givenCommand)
 				{
-					if (_extraAttributes is not null && _extraAttributes.DefaultCommand is not null)
+					if (_extraAttributes is not null && !EqualityComparer<CommandEnum>.Default.Equals(_extraAttributes.DefaultCommand, default))
 						Command = _extraAttributes.DefaultCommand;
 					else
 					{
@@ -643,6 +652,16 @@ namespace NuArgs
 				}
 				else
 					++i;
+			}
+			else
+			{
+				if (_extraAttributes is not null && !EqualityComparer<CommandEnum>.Default.Equals(_extraAttributes.DefaultCommand, default))
+					Command = _extraAttributes.DefaultCommand;
+				else
+				{
+					PrintHelp();
+					throw new ArgumentParsingException(ArgumentParsingExceptionType.NoCommandGiven);
+				}
 			}
 			
 			var args = rawArgs.ToList();
@@ -745,7 +764,10 @@ namespace NuArgs
 						continue;
 
 					if (positionalArguments.Count == 0)
+					{
+						PrintHelp();
 						throw new ArgumentParsingException(ArgumentParsingExceptionType.NoValueGivenToOption, option.ToString());
+					}
 
 					if (_optionAttributes[option].Kind == OptionType.MultipleValues)
 					{

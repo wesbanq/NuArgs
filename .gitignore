@@ -6,3 +6,4 @@ nupkgs/
 .editorconfig
 [Pp]roperties
 .vscode/
+.gitignore
